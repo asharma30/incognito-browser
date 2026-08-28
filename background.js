@@ -1,214 +1,125 @@
 const DEFAULT_RULES = [];
+const COOLDOWN_MS = 15000;
+const TAB_LOCK_MS = 20000;
 
-// Prevent duplicate redirects
-const recentRedirects = new Map();
+let currentRules = [];
+const lockedTabs = new Map();
+const recentHosts = new Map();
 
-// Track already-processed tabs
-const processedTabs = new Set();
+async function loadRules() {
+    const data = await chrome.storage.local.get("rules");
+    currentRules = data.rules || DEFAULT_RULES;
+    console.log("Rules loaded:", currentRules);
+}
 
-function urlMatches(url, rules) {
+loadRules();
 
-    try {
-
-        const hostname =
-            new URL(url).hostname.toLowerCase();
-
-        return rules.some(rule => {
-
-            rule = rule.toLowerCase().trim();
-
-            // Support wildcard rules (*.okta.com)
-            if (rule.startsWith("*.")) {
-
-                const domain =
-                    rule.substring(2);
-
-                return (
-                    hostname === domain ||
-                    hostname.endsWith("." + domain)
-                );
-            }
-
-            // Exact hostname rule
-            return hostname === rule;
-
-        });
-
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.rules) {
+        currentRules = changes.rules.newValue || DEFAULT_RULES;
+        console.log("Rules updated:", currentRules);
     }
-    catch {
+});
 
-        return false;
-
+function getHostname(url) {
+    try {
+        return new URL(url).hostname.toLowerCase();
+    } catch {
+        return null;
     }
 }
 
-chrome.webNavigation.onBeforeNavigate.addListener(
-    async (details) => {
+function isIgnoredUrl(url) {
+    return (
+        url.startsWith("edge://") ||
+        url.startsWith("chrome://") ||
+        url.startsWith("about:") ||
+        url.startsWith("file:") ||
+        url.startsWith("chrome-extension://") ||
+        url.startsWith("extension://") ||
+        url.includes("options.html")
+    );
+}
 
-        // Only process main frame
-        if (details.frameId !== 0)
-            return;
-
-        // Ignore browser & extension pages
-        if (
-            details.url.startsWith("edge://") ||
-            details.url.startsWith("chrome://") ||
-            details.url.startsWith("about:") ||
-            details.url.startsWith("file:") ||
-            details.url.includes("options.html") ||
-            details.url.startsWith("chrome-extension://")
-        ) {
-            return;
+function hostMatches(hostname) {
+    return currentRules.some(raw => {
+        const rule = raw.toLowerCase().trim();
+        if (rule === "") return false;
+        if (rule.startsWith("*.")) {
+            const domain = rule.substring(2);
+            return hostname === domain || hostname.endsWith("." + domain);
         }
+        return hostname === rule;
+    });
+}
 
-        try {
+function isLocked(tabId, hostname) {
+    const now = Date.now();
+    const tabTime = lockedTabs.get(tabId);
+    if (tabTime && now - tabTime < TAB_LOCK_MS) return true;
+    const hostTime = recentHosts.get(hostname);
+    if (hostTime && now - hostTime < COOLDOWN_MS) return true;
+    return false;
+}
 
-            let tab;
+function lock(tabId, hostname) {
+    const now = Date.now();
+    lockedTabs.set(tabId, now);
+    recentHosts.set(hostname, now);
+}
 
-            try {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    const url = changeInfo.url || tab.url;
+    if (!url) return;
+    if (tab.incognito) return;
+    if (isIgnoredUrl(url)) return;
 
-                tab = await chrome.tabs.get(
-                    details.tabId
-                );
+    const hostname = getHostname(url);
+    if (!hostname) return;
 
-            }
-            catch {
+    if (isLocked(tabId, hostname)) return;
+    if (!hostMatches(hostname)) return;
 
-                return;
+    lock(tabId, hostname);
+    routeToIncognito(tabId, url, hostname);
+});
 
-            }
+async function routeToIncognito(tabId, url, hostname) {
+    console.log("MATCH:", url, "| tabId:", tabId);
 
-            // Don't re-process incognito tabs
-            if (tab.incognito)
-                return;
+    let newWindow = null;
 
-            // Already handled this tab
-            if (
-                processedTabs.has(
-                    details.tabId
-                )
-            ) {
-                return;
-            }
-
-            const hostname =
-                new URL(details.url)
-                    .hostname
-                    .toLowerCase();
-
-            const now = Date.now();
-
-            // Hostname cooldown
-            const previousTime =
-                recentRedirects.get(
-                    hostname
-                );
-
-            if (
-                previousTime &&
-                now - previousTime < 10000
-            ) {
-
-                console.log(
-                    "Cooldown hit:",
-                    hostname
-                );
-
-                return;
-
-            }
-
-            const data =
-                await chrome.storage.local.get(
-                    "rules"
-                );
-
-            const rules =
-                data.rules || DEFAULT_RULES;
-
-            console.log(
-                "Loaded Rules:",
-                rules
-            );
-
-            if (
-                !urlMatches(
-                    details.url,
-                    rules
-                )
-            ) {
-                return;
-            }
-
-            console.log(
-                "MATCH FOUND:",
-                details.url
-            );
-
-            processedTabs.add(
-                details.tabId
-            );
-
-            recentRedirects.set(
-                hostname,
-                now
-            );
-
-            const originalTabId =
-                details.tabId;
-
-            console.log(
-                "Opening InPrivate window..."
-            );
-
-            const newWindow =
-                await chrome.windows.create({
-                    url: details.url,
-                    incognito: true
-                });
-
-            console.log(
-                "Opened InPrivate:",
-                hostname
-            );
-
-            if (
-                newWindow &&
-                originalTabId
-            ) {
-
-                try {
-
-                    await chrome.tabs.remove(
-                        originalTabId
-                    );
-
-                    console.log(
-                        "SUCCESSFULLY CLOSED TAB:",
-                        originalTabId
-                    );
-
-                }
-                catch (error) {
-
-                    console.error(
-                        "FAILED TO CLOSE TAB:",
-                        error
-                    );
-
-                }
-
-            }
-
-        }
-        catch (error) {
-
-            console.error(
-                "ROUTER ERROR:",
-                error
-            );
-
-        }
-
+    try {
+        newWindow = await chrome.windows.create({
+            url: url,
+            incognito: true
+        });
+        console.log("Opened InPrivate window for:", hostname);
+    } catch (error) {
+        console.error("Failed to open InPrivate window:", error);
+        return;
     }
-);
+
+    // Close the original tab regardless of newWindow truthiness.
+    console.log("Attempting to close original tab:", tabId);
+    try {
+        await chrome.tabs.remove(tabId);
+        console.log("Closed original tab:", tabId);
+    } catch (error) {
+        console.warn("Could not close original tab:", tabId, error);
+    }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+    lockedTabs.delete(tabId);
+});
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [tabId, t] of lockedTabs) {
+        if (now - t > TAB_LOCK_MS) lockedTabs.delete(tabId);
+    }
+    for (const [host, t] of recentHosts) {
+        if (now - t > COOLDOWN_MS) recentHosts.delete(host);
+    }
+}, 10000);

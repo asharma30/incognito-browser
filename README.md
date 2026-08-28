@@ -19,3 +19,12 @@ A browser extension for Microsoft Edge and Google Chrome that automatically open
 *.okta.com
 google.com
 ```
+
+## Known Issues
+
+- Google routing is inconsistent
+- Some SSO providers may open both browser and Incognito windows
+- Duplicate Incognito windows may occur during redirect chains
+ 
+
+These issues will be addressed in v2.0.

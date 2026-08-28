@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Incognito Router",
-  "version": "1.0",
+  "version": "2.0",
   "description": "Open configured URLs in Incognito/InPrivate mode.",
   "permissions": [
     "tabs",
-    "storage",
-    "webNavigation"
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"
