@@ -2,12 +2,16 @@ node_modules/
 dist/
 coverage/
 
-.vscode/settings.json
-.vscode/launch.json
+.v**ode/settings.json
+.vscode/launch.**on
 
-*.log
-*.tmp
+*.log**.tmp
 
 .DS_Store
 Thumbs.db
-`
+
+resize**cons.ps1
+Set-IncognitoRouterPolic**ps1
+*.zip
+icon.png
+Extension rule list.txt

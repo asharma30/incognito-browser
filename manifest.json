@@ -1,8 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Incognito Router",
-  "version": "2.0",
-  "description": "Open configured URLs in Incognito/InPrivate mode.",
+  "version": "3.0",
+  "description": "Open configured URLs in Incognito/InPrivate mode. Rules managed by IT policy.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "permissions": [
     "tabs",
     "storage"
@@ -10,6 +15,9 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "storage": {
+    "managed_schema": "managed_schema.json"
+  },
   "background": {
     "service_worker": "background.js"
   },

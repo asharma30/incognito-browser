@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "IncognitoRules": {
+      "title": "Incognito routing rules",
+      "description": "List of hostnames or wildcard patterns (e.g. *.okta.com) that must open in InPrivate/Incognito.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

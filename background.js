@@ -3,23 +3,48 @@ const COOLDOWN_MS = 15000;
 const TAB_LOCK_MS = 20000;
 
 let currentRules = [];
+let rulesAreManaged = false;
+
 const lockedTabs = new Map();
 const recentHosts = new Map();
 
+// ---- Rule loading: managed (IT policy) first, then local ----
+
 async function loadRules() {
-    const data = await chrome.storage.local.get("rules");
-    currentRules = data.rules || DEFAULT_RULES;
-    console.log("Rules loaded:", currentRules);
+    let managed = {};
+    try {
+        managed = await chrome.storage.managed.get("IncognitoRules");
+    } catch (e) {
+        // managed storage may be unavailable on unmanaged devices
+        managed = {};
+    }
+
+    if (managed && Array.isArray(managed.IncognitoRules) && managed.IncognitoRules.length > 0) {
+        currentRules = managed.IncognitoRules;
+        rulesAreManaged = true;
+        console.log("Rules loaded from MANAGED policy:", currentRules);
+        return;
+    }
+
+    const local = await chrome.storage.local.get("rules");
+    currentRules = local.rules || DEFAULT_RULES;
+    rulesAreManaged = false;
+    console.log("Rules loaded from LOCAL storage:", currentRules);
 }
 
 loadRules();
 
+// Reload when either policy or local rules change.
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.rules) {
-        currentRules = changes.rules.newValue || DEFAULT_RULES;
-        console.log("Rules updated:", currentRules);
+    if (area === "managed" && changes.IncognitoRules) {
+        loadRules();
+    }
+    if (area === "local" && changes.rules && !rulesAreManaged) {
+        loadRules();
     }
 });
+
+// ---- Helpers ----
 
 function getHostname(url) {
     try {
@@ -43,7 +68,7 @@ function isIgnoredUrl(url) {
 
 function hostMatches(hostname) {
     return currentRules.some(raw => {
-        const rule = raw.toLowerCase().trim();
+        const rule = String(raw).toLowerCase().trim();
         if (rule === "") return false;
         if (rule.startsWith("*.")) {
             const domain = rule.substring(2);
@@ -68,6 +93,8 @@ function lock(tabId, hostname) {
     recentHosts.set(hostname, now);
 }
 
+// ---- Main listener ----
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const url = changeInfo.url || tab.url;
     if (!url) return;
@@ -88,19 +115,14 @@ async function routeToIncognito(tabId, url, hostname) {
     console.log("MATCH:", url, "| tabId:", tabId);
 
     let newWindow = null;
-
     try {
-        newWindow = await chrome.windows.create({
-            url: url,
-            incognito: true
-        });
+        newWindow = await chrome.windows.create({ url: url, incognito: true });
         console.log("Opened InPrivate window for:", hostname);
     } catch (error) {
         console.error("Failed to open InPrivate window:", error);
         return;
     }
 
-    // Close the original tab regardless of newWindow truthiness.
     console.log("Attempting to close original tab:", tabId);
     try {
         await chrome.tabs.remove(tabId);
