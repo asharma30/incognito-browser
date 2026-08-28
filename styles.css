@@ -1,0 +1,14 @@
+body {
+    font-family: Segoe UI, Arial, sans-serif;
+    padding: 20px;
+}
+
+textarea {
+    width: 600px;
+    height: 300px;
+}
+
+button {
+    margin-top: 10px;
+    padding: 8px 16px;
+}
