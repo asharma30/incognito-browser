@@ -3,11 +3,31 @@
   "properties": {
     "IncognitoRules": {
       "title": "Incognito routing rules",
-      "description": "List of hostnames or wildcard patterns (e.g. *.okta.com) that must open in InPrivate/Incognito.",
+      "description": "Hostnames or wildcard patterns (e.g. *.google.com) to open in InPrivate/Incognito.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "TabInactivityRules": {
+      "title": "Tab inactivity auto-close rules",
+      "description": "Hosts whose tab auto-closes after N minutes of inactivity (works in incognito or normal tabs).",
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "minutes": { "type": "integer" }
+        }
       }
+    },
+    "CloseIncognitoOnLock": {
+      "title": "Close Incognito on screen lock",
+      "description": "If true, all Incognito windows close immediately when the workstation locks.",
+      "type": "boolean"
+    },
+    "WarnBeforeCloseSeconds": {
+      "title": "Warn before close (seconds)",
+      "description": "Show an on-page warning this many seconds before auto-close. 0 disables the warning.",
+      "type": "integer"
     }
   }
 }

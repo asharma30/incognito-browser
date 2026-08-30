@@ -1,25 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Incognito Router",
-  "version": "3.0",
-  "description": "Open configured URLs in Incognito/InPrivate mode. Rules managed by IT policy.",
-  "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
-  },
-  "permissions": [
-    "tabs",
-    "storage"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "storage": {
-    "managed_schema": "managed_schema.json"
-  },
-  "background": {
-    "service_worker": "background.js"
-  },
+  "version": "4.0",
+  "description": "Route URLs to InPrivate/Incognito with per-site inactivity auto-close. Rules managed by IT policy.",
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "permissions": ["tabs", "storage", "scripting", "idle", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "storage": { "managed_schema": "managed_schema.json" },
+  "background": { "service_worker": "background.js" },
   "options_page": "options.html"
 }

@@ -12,3 +12,8 @@ button {
     margin-top: 10px;
     padding: 8px 16px;
 }
+
+#inactivity { 
+    width: 600px; 
+    height: 120px; 
+}

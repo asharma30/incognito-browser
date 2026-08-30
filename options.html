@@ -4,20 +4,26 @@
     <title>Incognito Router</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
-
     <h2>Incognito Router Rules</h2>
 
-    <p>One entry per line.</p>
-
+    <p>Hostnames to route to InPrivate/Incognito, one per line. Use <code>*.appname.com</code> for all subdomains or <code>www.appname.com</code> for an exact host:</p>
     <textarea id="rules"></textarea>
 
-    <br><br>
+    <h3>Tab Inactivity Auto-Close</h3>
+    <p>One per line as <code>host, minutes</code>. Use <code>*.appname.com</code> for all subdomains or <code>www.appname.com</code> for an exact host (e.g. <code>*.appname.com, 10</code>):</p>
+    <textarea id="inactivity"></textarea>
 
+    <h3>Options</h3>
+    <label><input type="checkbox" id="closeOnLock"> Close all Incognito windows when the screen locks</label>
+    <br><br>
+    <label>Warn before close (seconds, 0 = off):
+        <input type="number" id="warnSeconds" min="0" value="60" style="width:80px">
+    </label>
+
+    <br><br>
     <button id="save">Save</button>
 
     <script src="options.js"></script>
-
 </body>
 </html>
