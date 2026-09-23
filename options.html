@@ -7,7 +7,7 @@
 <body>
     <h2>Incognito Router Rules</h2>
 
-    <p>Hostnames to route to InPrivate/Incognito, one per line. Use <code>*.appname.com</code> for all subdomains or <code>www.appname.com</code> for an exact host:</p>
+    <p>Hostnames to route to InPrivate/Incognito, one per line. Use <code>*.appname.com</code> for all subdomains or <code>www.appname.com</code> for an exact host (e.g. <code>*.okta.com</code>):</p>
     <textarea id="rules"></textarea>
 
     <h3>Tab Inactivity Auto-Close</h3>
@@ -23,6 +23,13 @@
 
     <br><br>
     <button id="save">Save</button>
+
+    <h3>Activity Log</h3>
+    <p id="logSummary">Loading…</p>
+    <p style="color:#555;font-size:12px;">
+        Records each auto-closed tab (site name, time, and reason). Entries older than 30 days are removed automatically.
+    </p>
+    <button id="exportLog">Export CSV</button>
 
     <script src="options.js"></script>
 </body>

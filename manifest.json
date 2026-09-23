@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Incognito Router",
-  "version": "4.0",
+  "version": "4.1",
   "description": "Route URLs to InPrivate/Incognito with per-site inactivity auto-close. Rules managed by IT policy.",
   "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
   "permissions": ["tabs", "storage", "scripting", "idle", "alarms"],

@@ -2,6 +2,10 @@ const DEFAULT_RULES = [];
 const COOLDOWN_MS = 15000;
 const TAB_LOCK_MS = 20000;
 
+// Activity log settings
+const LOG_RETENTION_DAYS = 30;
+const LOG_MAX_EVENTS = 1000;
+
 let currentRules = [];
 let inactivityRules = [];
 let closeOnLock = false;
@@ -20,7 +24,45 @@ async function loadTracked() {
 }
 function saveTracked() { chrome.storage.session.set({ trackedTabs }); }
 
-// ---- Rule loading: managed first, then local ----
+// ---- Activity log -------------------------------------------------
+
+async function logEvent(hostname, reason) {
+    if (!hostname) return;
+    try {
+        const d = await chrome.storage.local.get("activityLog");
+        const log = d.activityLog || [];
+
+        log.push({ t: Date.now(), h: hostname, r: reason });
+
+        // Hard cap (safety against runaway growth)
+        while (log.length > LOG_MAX_EVENTS) log.shift();
+
+        await chrome.storage.local.set({ activityLog: log });
+    } catch (e) {
+        console.warn("Log write failed:", e);
+    }
+}
+
+async function purgeOldLogEntries() {
+    try {
+        const d = await chrome.storage.local.get("activityLog");
+        const log = d.activityLog || [];
+        if (log.length === 0) return;
+
+        const cutoff = Date.now() - (LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+        const kept = log.filter(e => e.t >= cutoff);
+
+        if (kept.length !== log.length) {
+            await chrome.storage.local.set({ activityLog: kept });
+            console.log(`Purged ${log.length - kept.length} log entries older than ${LOG_RETENTION_DAYS} days.`);
+        }
+    } catch (e) {
+        console.warn("Log purge failed:", e);
+    }
+}
+
+// ---- Rule loading: managed first, then local ----------------------
+
 async function loadRules() {
     let m = {};
     try {
@@ -53,19 +95,24 @@ loadRules();
 
 chrome.storage.onChanged.addListener((c, area) => {
     if (area === "managed") loadRules();
-    if (area === "local" && !rulesAreManaged) loadRules();
+    if (area === "local" && !rulesAreManaged && (c.rules || c.inactivityRules || c.closeOnLock || c.warnSeconds)) {
+        loadRules();
+    }
 });
 
-// ---- Helpers ----
+// ---- Helpers ------------------------------------------------------
+
 function getHostname(url) {
     try { return new URL(url).hostname.toLowerCase(); } catch { return null; }
 }
+
 function isIgnoredUrl(url) {
     return url.startsWith("edge://") || url.startsWith("chrome://") ||
            url.startsWith("about:") || url.startsWith("file:") ||
            url.startsWith("chrome-extension://") || url.startsWith("extension://") ||
            url.includes("options.html");
 }
+
 function ruleMatchesHost(rule, hostname) {
     rule = String(rule).toLowerCase().trim();
     if (rule === "") return false;
@@ -75,9 +122,11 @@ function ruleMatchesHost(rule, hostname) {
     }
     return hostname === rule;
 }
+
 function hostMatches(hostname) {
     return currentRules.some(r => ruleMatchesHost(r, hostname));
 }
+
 function getInactivityMinutes(hostname) {
     for (const r of inactivityRules) {
         if (r && r.host && ruleMatchesHost(r.host, hostname)) {
@@ -87,6 +136,7 @@ function getInactivityMinutes(hostname) {
     }
     return null;
 }
+
 function isLocked(tabId, hostname) {
     const now = Date.now();
     const t = lockedTabs.get(tabId);
@@ -95,13 +145,15 @@ function isLocked(tabId, hostname) {
     if (h && now - h < COOLDOWN_MS) return true;
     return false;
 }
+
 function lock(tabId, hostname) {
     const now = Date.now();
     lockedTabs.set(tabId, now);
     recentHosts.set(hostname, now);
 }
 
-// ---- Routing (IncognitoRules) ----
+// ---- Routing (IncognitoRules) -------------------------------------
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const url = changeInfo.url || tab.url;
     if (!url || tab.incognito || isIgnoredUrl(url)) return;
@@ -126,7 +178,8 @@ async function routeToIncognito(originalTabId, url, hostname) {
     } catch (e) { console.warn("Close original failed:", e); }
 }
 
-// ---- Inactivity tracking (TabInactivityRules) - any tab, incognito or normal ----
+// ---- Inactivity tracking (any tab, incognito or normal) -----------
+
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.status !== "complete") return;
     const url = tab.url || "";
@@ -138,20 +191,25 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     const minutes = getInactivityMinutes(hostname);
 
     if (minutes) {
-        trackedTabs[tabId] = { timeoutMs: minutes * 60000, lastActivity: Date.now(), warned: false };
+        trackedTabs[tabId] = {
+            timeoutMs: minutes * 60000,
+            lastActivity: Date.now(),
+            warned: false,
+            host: hostname
+        };
         saveTracked();
         try {
             await chrome.scripting.executeScript({ target: { tabId }, files: ["activity-tracker.js"] });
         } catch (e) { console.warn("Inject failed:", e); }
         console.log(`Tracking tab ${tabId} (${hostname}) - ${minutes} min`);
     } else if (trackedTabs[tabId]) {
-        // navigated away from a tracked host -> stop tracking
         delete trackedTabs[tabId];
         saveTracked();
     }
 });
 
-// ---- Activity pings reset the tab's timer ----
+// ---- Activity pings reset the tab's timer -------------------------
+
 chrome.runtime.onMessage.addListener(async (msg, sender) => {
     if (!msg || msg.type !== "activity" || !sender.tab) return;
     const tabId = sender.tab.id;
@@ -166,10 +224,15 @@ chrome.runtime.onMessage.addListener(async (msg, sender) => {
     }
 });
 
-// ---- Periodic check (every 30s) ----
+// ---- Periodic check (every 30s) -----------------------------------
+
 chrome.alarms.create("idleCheck", { periodInMinutes: 0.5 });
+
 chrome.alarms.onAlarm.addListener(async (a) => {
     if (a.name !== "idleCheck") return;
+
+    await purgeOldLogEntries();
+
     await loadTracked();
     const now = Date.now();
     let changed = false;
@@ -180,8 +243,13 @@ chrome.alarms.onAlarm.addListener(async (a) => {
         const idle = now - info.lastActivity;
 
         if (idle >= info.timeoutMs) {
-            try { await chrome.tabs.remove(tabId); console.log("Closed inactive tab:", tabId); }
-            catch (e) {}
+            try {
+                await chrome.tabs.remove(tabId);
+                console.log("Closed inactive tab:", tabId, info.host);
+                await logEvent(info.host, "idle");
+            } catch (e) {
+                console.error("FAILED to close tab:", tabId, e);
+            }
             delete trackedTabs[idStr];
             changed = true;
         } else if (warnSeconds > 0 && idle >= info.timeoutMs - warnSeconds * 1000) {
@@ -196,17 +264,29 @@ chrome.alarms.onAlarm.addListener(async (a) => {
     if (changed) saveTracked();
 });
 
-// ---- Screen lock backstop (admin toggle) ----
+// ---- Screen lock backstop (admin toggle) --------------------------
+
 chrome.idle.setDetectionInterval(60);
+
 chrome.idle.onStateChanged.addListener(async (state) => {
     if (state !== "locked" || !closeOnLock) return;
     try {
-        const wins = await chrome.windows.getAll({});
+        const wins = await chrome.windows.getAll({ populate: true });
         for (const w of wins) {
-            if (w.incognito) {
-                try { await chrome.windows.remove(w.id); console.log("Lock: closed incognito window", w.id); }
-                catch (e) {}
+            if (!w.incognito) continue;
+
+            // Record hostnames before closing the window
+            if (Array.isArray(w.tabs)) {
+                for (const t of w.tabs) {
+                    const h = getHostname(t.url || t.pendingUrl || "");
+                    if (h) await logEvent(h, "screen-lock");
+                }
             }
+
+            try {
+                await chrome.windows.remove(w.id);
+                console.log("Lock: closed incognito window", w.id);
+            } catch (e) {}
         }
     } catch (e) {}
     await loadTracked();
@@ -214,7 +294,8 @@ chrome.idle.onStateChanged.addListener(async (state) => {
     saveTracked();
 });
 
-// ---- Cleanup ----
+// ---- Cleanup ------------------------------------------------------
+
 chrome.tabs.onRemoved.addListener(async (tabId) => {
     lockedTabs.delete(tabId);
     await loadTracked();
